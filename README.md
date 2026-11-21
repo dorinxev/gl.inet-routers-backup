@@ -68,6 +68,8 @@ Restore only overwrites and adds files; it never deletes anything that isn't in 
 ## After a factory reset: restore your configuration
 
 You pressed Reset (or used the admin panel's reset) and you have a backup **saved off the router**.
+This route needs someone at the router (the Reset button, and a cable to it). For a **remote** router,
+use "Reset and reinstall" below instead.
 
 1. **Boot and get in.** Connect by cable, open the admin panel (`192.168.8.1` on most GL.iNet routers) and
    set the temporary admin password the wizard asks for. On GL.iNet firmware 4 that password is also the
@@ -103,8 +105,13 @@ for last: `restore <archive> --only etc/config/system --only etc/config/dhcp`, t
 ## "Reset and reinstall" — upgrading the firmware with your configuration
 
 Sometimes the vendor tells everyone to **factory reset and install new firmware** (GL.iNet's security notice
-of 2026-11-20 does). For a router you can't easily reach, do it in one step with the firmware's own
-`sysupgrade -f`:
+of 2026-11-20 does).
+
+> **Remote router?** Use this section, not the one above. The Reset button needs someone standing next to the
+> router; this route does not. **Every command below runs on the router, over SSH (or Tailscale)** — the router
+> downloads the firmware itself, so nothing has to be copied to it and nobody has to be on site.
+
+Do it in one step with the firmware's own `sysupgrade -f`:
 
 > `sysupgrade -f <backup.tar.gz> <firmware.bin>` flashes the image **and installs your backup as the new
 > system's configuration** instead of the old live files.
@@ -114,16 +121,36 @@ carried over, so this behaves like *reset + restore* with a single reboot. The b
 the firmware's own first-boot path, which then runs its migration scripts — something a by-hand restore after
 booting skips.
 
-1. **Back up and copy it off the router.** `sh glbackup.sh backup -l before-upgrade`, then copy the three files.
-2. **Review it.** `sh glbackup.sh show <archive>` and `diff`. If the router may be compromised, read the
-   flagged files carefully: anything in them comes back after the flash. If something looks wrong, don't use
-   that archive.
-3. **Download the firmware and check its hash.** Get the `.bin` for your exact model from GL.iNet's download
-   center and compare its **SHA-256** with the one published there. The command-line `sysupgrade` does *not*
-   verify GL.iNet's signature (the web UI's upgrade does), so the hash is your integrity check.
+1. **Back up and copy it off the router.** `sh glbackup.sh backup -l before-upgrade`, then copy the three files
+   to your computer. The copy on the router is wiped if the flash goes wrong.
+2. **Review it.** `sh glbackup.sh show <archive>` and `diff`. **For a remote router, make sure the archive
+   contains what brings the router back online:** `etc/dropbear/authorized_keys` (SSH), `etc/config/network`,
+   and your VPN state (e.g. `etc/tailscale/`). If the router may be compromised, read the flagged files
+   carefully: anything in them comes back after the flash. If something looks wrong, don't use that archive.
+3. **Get the firmware onto the router and check it.** The `.bin` comes from GL.iNet's download servers
+   (`fw.gl-inet.com`). Your router can fetch it directly; the download page
+   (`https://dl.gl-inet.com/router/<model>`) is a JavaScript app that reads from a public API, and the commands
+   below use the same API. It is **undocumented**, so if it stops working, copy the file link and SHA-256 from the
+   download page instead.
    ```sh
-   sha256sum /tmp/firmware.bin
+   MODEL=$(cat /proc/gl-hw-info/model)                  # e.g. be9300
+   curl -fsS "https://firmware-api.gl-inet.com/cloud-api/model/info?model=$MODEL" -o /tmp/fw.json
+
+   # which stable versions exist (newest first)?
+   jsonfilter -i /tmp/fw.json -e '@.info[@.stage="RELEASE"].version'
+
+   # take the newest stable one (use [0] only if that is the version you want)
+   URL=$(jsonfilter -i /tmp/fw.json -e '@.info[@.stage="RELEASE"].download[0].link'   | head -n1)
+   SHA=$(jsonfilter -i /tmp/fw.json -e '@.info[@.stage="RELEASE"].download[0].sha256' | head -n1)
+   echo "$URL"
+
+   curl -fL "$URL" -o /tmp/firmware.bin
+   echo "$SHA  /tmp/firmware.bin" | sha256sum -c -      # must print: /tmp/firmware.bin: OK
    ```
+   The command-line `sysupgrade` does *not* verify GL.iNet's signature (the web UI's upgrade does). The hash
+   from the API comes from the same server as the file, so it only catches a damaged download. To also guard
+   against a tampered server, compare the SHA-256 with a second source (the download page in your browser,
+   or GL.iNet's release announcement). Make sure the version is the one you intend to install.
 4. **Dry run** — checks the image and model, flashes nothing:
    ```sh
    sysupgrade -T -f /root/backups/glbackup_<...>.tar.gz /tmp/firmware.bin
@@ -162,6 +189,8 @@ Things to weigh first:
 - Backup, verify, show, diff, partial and full restore, mismatch refusal and malicious-archive refusal:
   against a sandbox with a stubbed `sysupgrade` (POSIX `dash`).
 - `files` command on a real Flint 3 (GL-BE9300, firmware 4.9.0, busybox `ash`), read-only.
+- The firmware lookup commands (`curl` + `jsonfilter` against the download API, SHA-256 shown) on that Flint 3,
+  read-only — the download and `sysupgrade` steps themselves were not run.
 - **Not yet tested:** a real backup + restore cycle on hardware, and the two procedures above end to end.
   They are written from the firmware's own scripts (`sysupgrade`, `platform.sh`, GL.iNet 4.10). Try restore with
   `--root /tmp/preview` first.
