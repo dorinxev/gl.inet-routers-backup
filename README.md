@@ -242,7 +242,7 @@ skips.
 
 ```mermaid
 flowchart LR
-    A["1 Back up"] --> B["2 Review"] --> C["3 Get firmware<br/>+ check hash"] --> D["4 Dry run"] --> E["5 Flash"] --> F["6 Reconnect"]
+    A["Back up"] --> B["Review"] --> C["Firmware"] --> D["Dry run"] --> E["Flash"] --> F["Reconnect"]
 ```
 
 ### 1. Back up, and copy it off the router
