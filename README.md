@@ -14,6 +14,24 @@ Flint 3 · Flint 2 · Beryl · Brume · any OpenWrt device
 
 <br>
 
+> [!IMPORTANT]
+> **GL.iNet security notice, 2026-11-20 (GoodCloud / KVM / routers).** Some routers were infected through
+> the cloud remote-management service. GL.iNet says a factory reset is only needed if the indicator is
+> found. Check first, and **take backups only from a router that passes**:
+>
+> ```sh
+> ssh root@192.168.8.1 'sh -s' < glcheck.sh     # read-only, changes nothing
+> ```
+>
+> [`glcheck.sh`](glcheck.sh) looks for the published indicator (`crond -i /tmp/.log`), unexpected cron
+> jobs, programs running from `/tmp`, and a reported attacker address, then prints `OK` or `FAIL` for each.
+> A clean result is **not proof** the router is clean. Details are in the
+> [official notice](https://forum.gl-inet.com/t/2026-11-20-gl-inet-security-notice-goodcloud-kvm-routers/73056).
+> A backup keeps files like `rc.local` and SSH keys, so restoring one taken from an infected router can
+> bring the problem back.
+
+<br>
+
 GL.iNet's admin panel has **no backup button**, and the backup that does exist lives in LuCI, which you
 can't open through GoodCloud.
 
