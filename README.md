@@ -121,12 +121,7 @@ Restore only overwrites and adds files. It **never deletes** anything that isn't
 
 ## 🧭 Which route do you need?
 
-```mermaid
-flowchart TD
-    Q{"Can someone stand next<br/>to the router?"}
-    Q -- "Yes" --> A["<b>Route A</b><br/>Factory reset,<br/>then restore"]
-    Q -- "No, it's remote" --> B["<b>Route B</b><br/>Reset + reinstall in one step<br/>(sysupgrade -f)"]
-```
+**Can someone stand next to the router?**  &nbsp;**Yes** → Route A &nbsp;·&nbsp; **No, it's remote** → Route B
 
 | | Route A: reset, then restore | Route B: reset and reinstall |
 |---|---|---|
@@ -240,10 +235,7 @@ than carried over, so this behaves like *reset + restore* with a single reboot. 
 first-boot path unpacks the backup and runs its migration scripts, which a by-hand restore after booting
 skips.
 
-```mermaid
-flowchart LR
-    A["Back up"] --> B["Review"] --> C["Firmware"] --> D["Dry run"] --> E["Flash"] --> F["Reconnect"]
-```
+> **Back up** &nbsp;➜&nbsp; **Review** &nbsp;➜&nbsp; **Firmware** &nbsp;➜&nbsp; **Dry run** &nbsp;➜&nbsp; **Flash** &nbsp;➜&nbsp; **Reconnect**
 
 ### 1. Back up, and copy it off the router
 
