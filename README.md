@@ -65,6 +65,88 @@ it too.
 
 Restore only overwrites and adds files; it never deletes anything that isn't in the archive.
 
+## After a factory reset: restore your configuration
+
+You pressed Reset (or used the admin panel's reset) and you have a backup **saved off the router**.
+
+1. **Boot and get in.** Connect by cable, open the admin panel (`192.168.8.1` on most GL.iNet routers) and
+   set the temporary admin password the wizard asks for. On GL.iNet firmware 4 that password is also the
+   SSH `root` password.
+2. **Copy the script and the backup onto the router** — keep the three backup files together and don't
+   rename them (the `.info` and `.sha256` next to the archive are what enable the checks):
+   ```sh
+   for f in glbackup.sh glbackup_*; do ssh root@192.168.8.1 "cat > /root/$f" < "$f"; done
+   ```
+   (`cat` over SSH works even when the router has no SFTP server; `scp -O` also works.)
+3. **Check it and preview.** On the router:
+   ```sh
+   sh glbackup.sh verify  glbackup_<...>.tar.gz
+   sh glbackup.sh diff    glbackup_<...>.tar.gz     # almost everything will be "replaced" after a reset
+   ```
+   Read the flagged files (`rc.local`, `shadow`, `authorized_keys`, `init.d`, `network`, `firewall`, …).
+4. **Restore.** `sh glbackup.sh restore glbackup_<...>.tar.gz`, type `RESTORE`.
+   A reset doesn't change the firmware version, so the model/firmware check passes if you haven't upgraded
+   since the backup. If you have, see the next section.
+5. **Before you reboot, know what changes.** The restore brings back your **real admin password, SSH keys,
+   LAN IP address and Wi-Fi settings**. After the reboot, log in with the *old* password and look for the router
+   at the *old* address, not the temporary one from step 1. The restored settings also include the
+   **GoodCloud binding**; to keep the router off the cloud, run this before rebooting:
+   `uci set gl-cloud.@cloud[0].enable='0'; uci commit gl-cloud`
+6. **Reboot once, and only after** the script prints `Verifying — every restored file matches the archive`.
+   Use `reboot` (or `restore … --reboot`). Don't reboot, or cut power, during the restore itself — it takes
+   seconds. Many GL.iNet services only read their settings at boot, so a reboot is needed and restarting a
+   few services is not enough. Wait a couple of minutes, then reconnect at the restored address.
+
+If you can't reach it afterwards, press Reset again and restore in pieces, leaving the network settings
+for last: `restore <archive> --only etc/config/system --only etc/config/dhcp`, then `--only etc/config/network`.
+
+## "Reset and reinstall" — upgrading the firmware with your configuration
+
+Sometimes the vendor tells everyone to **factory reset and install new firmware** (GL.iNet's security notice
+of 2026-11-20 does). For a router you can't easily reach, do it in one step with the firmware's own
+`sysupgrade -f`:
+
+> `sysupgrade -f <backup.tar.gz> <firmware.bin>` flashes the image **and installs your backup as the new
+> system's configuration** instead of the old live files.
+
+From reading the firmware scripts (GL.iNet 4.10): the old settings area is rebuilt from the backup rather than
+carried over, so this behaves like *reset + restore* with a single reboot. The backup is also unpacked by
+the firmware's own first-boot path, which then runs its migration scripts — something a by-hand restore after
+booting skips.
+
+1. **Back up and copy it off the router.** `sh glbackup.sh backup -l before-upgrade`, then copy the three files.
+2. **Review it.** `sh glbackup.sh show <archive>` and `diff`. If the router may be compromised, read the
+   flagged files carefully: anything in them comes back after the flash. If something looks wrong, don't use
+   that archive.
+3. **Download the firmware and check its hash.** Get the `.bin` for your exact model from GL.iNet's download
+   center and compare its **SHA-256** with the one published there. The command-line `sysupgrade` does *not*
+   verify GL.iNet's signature (the web UI's upgrade does), so the hash is your integrity check.
+   ```sh
+   sha256sum /tmp/firmware.bin
+   ```
+4. **Dry run** — checks the image and model, flashes nothing:
+   ```sh
+   sysupgrade -T -f /root/backups/glbackup_<...>.tar.gz /tmp/firmware.bin
+   ```
+5. **Flash.** Don't add `-n` (that discards the configuration).
+   ```sh
+   sysupgrade -f /root/backups/glbackup_<...>.tar.gz /tmp/firmware.bin
+   ```
+   Your SSH session closes, the router flashes and **reboots by itself**. Give it a few minutes and don't
+   power it off.
+6. **Reconnect** at the restored address and check it. Optional: disable GoodCloud as in the step above.
+
+Things to weigh first:
+
+- **Wait for the fixed firmware.** Don't reinstall the same vulnerable version "to be safe".
+- **There may be no second firmware slot.** The Flint 3 checked here has a single `rootfs` partition. A power cut or
+  bad image mid-flash can leave it needing a physical U-Boot recovery. Think twice for sites nobody can visit.
+- **The image is loaded into RAM** (`/tmp`). If `free` shows less than the image size, reboot first.
+- **A different firmware version than the backup's** is outside what GL.iNet supports. This route is the same
+  one a normal "keep settings" upgrade takes, but try it on a router you can reach first.
+- Prefer the web UI? Reset → set up → upgrade in the UI → `glbackup restore --force` (the firmware versions
+  differ). That route skips the first-boot migrations, so check the admin panel afterwards.
+
 ## Things to know
 
 - **Backups contain secrets** (password hashes, SSH/Wi-Fi keys). They're saved with mode 600. Keep them private.
@@ -72,15 +154,17 @@ Restore only overwrites and adds files; it never deletes anything that isn't in 
   `scp`, or a USB stick: `sh glbackup.sh backup -o /mnt/sda1/glbackup`.
 - **Same model and firmware version.** GL.iNet supports restores only that way; `glbackup` enforces it unless `--force`.
 - **A compromised router?** A restore can bring the attacker's changes back. Run `diff`, read the flagged files.
-- This is not an upgrade tool. For firmware upgrades, GL.iNet's own "keep settings" path is still the
-  supported route.
+- `glbackup` doesn't flash firmware. For upgrades, see "Reset and reinstall" above, or use GL.iNet's own
+  "keep settings" path.
 
 ## Tested
 
 - Backup, verify, show, diff, partial and full restore, mismatch refusal and malicious-archive refusal:
   against a sandbox with a stubbed `sysupgrade` (POSIX `dash`).
 - `files` command on a real Flint 3 (GL-BE9300, firmware 4.9.0, busybox `ash`), read-only.
-- **Not yet tested:** a real backup + restore cycle on hardware. Try restore with `--root /tmp/preview` first.
+- **Not yet tested:** a real backup + restore cycle on hardware, and the two procedures above end to end.
+  They are written from the firmware's own scripts (`sysupgrade`, `platform.sh`, GL.iNet 4.10). Try restore with
+  `--root /tmp/preview` first.
 
 Licensed under the [MIT License](LICENSE).
 
