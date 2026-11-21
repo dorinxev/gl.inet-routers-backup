@@ -1,0 +1,5 @@
+# Router backups contain password hashes, SSH keys and Wi-Fi passphrases
+backups/
+*.tar.gz
+*.tar.gz.sha256
+.*.partial
